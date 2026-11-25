@@ -1,0 +1,377 @@
+// Prisma Schema — Sistem Manajemen Hotel (Fase 1)
+// Database: SQLite (mudah migrasi ke PostgreSQL)
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+// ==================== EPIC 8: Auth & Security ====================
+
+model User {
+  id           String   @id @default(uuid())
+  username     String   @unique
+  email        String?  @unique
+  passwordHash String
+  nama         String
+  role         String   @default("RESEPSIONIS") // OWNER, MANAJER, RESEPSIONIS, ADMIN_KEUANGAN
+  aktif        Boolean  @default(true)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  auditLogs      AuditLog[]
+  dailyCloses    DailyClose[]
+  expenses       Expense[]
+  folioCharges   FolioCharge[]
+  payments       Payment[]
+  reservations   Reservation[]
+  expenseApprovals Expense[]    @relation("ApprovedBy")
+}
+
+model AuditLog {
+  id         String   @id @default(uuid())
+  userId     String
+  user       User     @relation(fields: [userId], references: [id])
+  aksi       String   // CREATE, UPDATE, DELETE, VOID, LOGIN, CLOSE_DAY, REOPEN_DAY
+  entitas    String   // Nama tabel/model
+  entitasId  String?
+  dataBefore String?  // JSON
+  dataAfter  String?  // JSON
+  keterangan String?
+  ipAddress  String?
+  createdAt  DateTime @default(now())
+}
+
+// ==================== EPIC 1: Setup Properti ====================
+
+model Property {
+  id              String   @id @default(uuid())
+  nama            String
+  alamat          String?
+  kota            String?
+  provinsi        String?
+  zonaWaktu       String   @default("Asia/Jakarta") // WIB
+  jamCheckIn      String   @default("14:00")
+  jamCheckOut     String   @default("12:00")
+  cutOffHariBisnis String  @default("06:00")
+  mataUang        String   @default("IDR")
+  telepon         String?
+  email           String?
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+}
+
+model RoomType {
+  id           String   @id @default(uuid())
+  nama         String
+  kapasitas    Int      @default(2)
+  fasilitas    String?  // JSON array
+  deskripsi    String?
+  aktif        Boolean  @default(true)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  rooms      Room[]
+  ratePlans  RatePlan[]
+}
+
+model Room {
+  id           String   @id @default(uuid())
+  nomor        String   @unique
+  lantai       Int?
+  roomTypeId   String
+  roomType     RoomType @relation(fields: [roomTypeId], references: [id])
+  status       String   @default("TERSEDIA") // TERSEDIA, TERISI, OUT_OF_ORDER, MAINTENANCE
+  aktif        Boolean  @default(true)
+  catatan      String?
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  reservations Reservation[]
+}
+
+model TaxConfig {
+  id              String   @id @default(uuid())
+  pajakDaerahPct  Float    @default(10.0)
+  serviceChargePct Float   @default(10.0)
+  modeHarga       String   @default("EXCLUSIVE") // INCLUSIVE, EXCLUSIVE
+  berlakuSejak    DateTime @default(now())
+  aktif           Boolean  @default(true)
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+}
+
+// ==================== EPIC 2: Manajemen Tarif ====================
+
+model RatePlan {
+  id           String   @id @default(uuid())
+  nama         String
+  roomTypeId   String
+  roomType     RoomType @relation(fields: [roomTypeId], references: [id])
+  tarifDasar   Float
+  sumber       String   @default("UMUM") // UMUM, OTA, KORPORAT, LONG_STAY
+  inklusi      String?  // JSON: ["sarapan", "wifi"]
+  aktif        Boolean  @default(true)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  rateCalendars RateCalendar[]
+  reservations  Reservation[]
+}
+
+model RateCalendar {
+  id           String   @id @default(uuid())
+  ratePlanId   String
+  ratePlan     RatePlan @relation(fields: [ratePlanId], references: [id])
+  tanggal      DateTime
+  kelasMusim   String   @default("NORMAL") // NORMAL, WEEKEND, HIGH_SEASON, LIBUR
+  tarifOverride Float?
+  aktif        Boolean  @default(true)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  @@unique([ratePlanId, tanggal])
+}
+
+// ==================== EPIC 3: Data Tamu ====================
+
+model Guest {
+  id                 String   @id @default(uuid())
+  nama               String
+  telepon            String?
+  email              String?
+  jenisIdentitas     String?  // KTP, PASPOR, SIM
+  nomorIdentitas     String?  // Terenkripsi
+  kewarganegaraan    String   @default("WNI")
+  kotaAsal           String?
+  alamat             String?
+  flagVip            Boolean  @default(false)
+  flagBlacklist      Boolean  @default(false)
+  catatan            String?
+  persetujuanPrivasi Boolean  @default(false)
+  createdAt          DateTime @default(now())
+  updatedAt          DateTime @updatedAt
+
+  reservations Reservation[]
+}
+
+// ==================== EPIC 4: Reservasi & Front Desk ====================
+
+model Reservation {
+  id              String    @id @default(uuid())
+  kodeBooking     String    @unique @default(uuid())
+  guestId         String
+  guest           Guest     @relation(fields: [guestId], references: [id])
+  roomId          String?
+  room            Room?     @relation(fields: [roomId], references: [id])
+  ratePlanId      String?
+  ratePlan        RatePlan? @relation(fields: [ratePlanId], references: [id])
+  
+  tanggalCheckIn  DateTime
+  tanggalCheckOut DateTime
+  jumlahMalam     Int
+  jumlahDewasa    Int       @default(1)
+  jumlahAnak      Int       @default(0)
+  
+  // Snapshot tarif
+  tarifPerMalam   Float
+  totalTarif      Float
+  totalPajak      Float     @default(0)
+  totalServiceCharge Float  @default(0)
+  totalKeseluruhan Float    @default(0)
+  
+  sumberBooking   String    @default("WALK_IN") // WALK_IN, TELEPON_WA, OTA_TRAVELOKA, OTA_BOOKING, OTA_AGODA, OTA_TIKET, LANGSUNG, KORPORAT
+  namaOta         String?
+  komisiOtaPct    Float?
+  
+  status          String    @default("CONFIRMED") // TENTATIVE, CONFIRMED, CHECKED_IN, CHECKED_OUT, CANCELLED, NO_SHOW
+  alasanBatal     String?
+  
+  // Diskon
+  diskonPct       Float?
+  diskonNominal   Float?
+  alasanDiskon    String?
+  approvedBy      String?
+  
+  // Biaya tambahan
+  extraBed        Boolean   @default(false)
+  biayaExtraBed   Float?
+  earlyCheckIn    Boolean   @default(false)
+  lateCheckOut    Boolean   @default(false)
+  biayaTambahan   Float     @default(0)
+  
+  catatan         String?
+  
+  actualCheckIn   DateTime?
+  actualCheckOut  DateTime?
+  
+  createdById     String?
+  createdBy       User?     @relation(fields: [createdById], references: [id])
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+
+  folio Folio?
+}
+
+// ==================== EPIC 5: Folio & Kasir ====================
+
+model Folio {
+  id             String   @id @default(uuid())
+  nomorFolio     String   @unique @default(uuid())
+  reservationId  String   @unique
+  reservation    Reservation @relation(fields: [reservationId], references: [id])
+  status         String   @default("OPEN") // OPEN, CLOSED, VOID
+  totalCharge    Float    @default(0)
+  totalPayment   Float    @default(0)
+  balance        Float    @default(0)
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  charges  FolioCharge[]
+  payments Payment[]
+}
+
+model FolioCharge {
+  id              String   @id @default(uuid())
+  folioId         String
+  folio           Folio    @relation(fields: [folioId], references: [id])
+  tanggal         DateTime
+  kategori        String   // KAMAR, LAUNDRY, MAKAN, PARKIR, MINIBAR, LAINNYA
+  deskripsi       String
+  nominal         Float
+  pajak           Float    @default(0)
+  serviceCharge   Float    @default(0)
+  total           Float
+  isVoid          Boolean  @default(false)
+  alasanVoid      String?
+  voidAt          DateTime?
+  createdById     String?
+  createdBy       User?    @relation(fields: [createdById], references: [id])
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+}
+
+model Payment {
+  id            String   @id @default(uuid())
+  folioId       String
+  folio         Folio    @relation(fields: [folioId], references: [id])
+  tanggal       DateTime
+  metode        String   // TUNAI, TRANSFER, QRIS, KARTU_KREDIT, KARTU_DEBIT, DIBAYAR_OTA, DEPOSIT
+  nominal       Float
+  keterangan    String?
+  nomorReferensi String?
+  isVoid        Boolean  @default(false)
+  alasanVoid    String?
+  voidAt        DateTime?
+  createdById   String?
+  createdBy     User?    @relation(fields: [createdById], references: [id])
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+}
+
+// ==================== EPIC 6: Pengeluaran Operasional ====================
+
+model ExpenseCategory {
+  id           String   @id @default(uuid())
+  nama         String
+  departemen   String   // KAMAR, FNB, TAK_TERDISTRIBUSI, TETAP
+  kodeUsali    String?  // Pemetaan USALI
+  aktif        Boolean  @default(true)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  expenses          Expense[]
+  recurringExpenses RecurringExpense[]
+}
+
+model Expense {
+  id              String   @id @default(uuid())
+  tanggal         DateTime
+  categoryId      String
+  category        ExpenseCategory @relation(fields: [categoryId], references: [id])
+  departemen      String
+  nominal         Float
+  metodeBayar     String   // TUNAI, TRANSFER, KAS_KECIL
+  vendor          String?
+  catatan         String?
+  fotoNota        String?  // Path file
+  jenisBeban      String   @default("OPERASIONAL") // OPERASIONAL, INVESTASI
+  statusApproval  String   @default("APPROVED") // PENDING, APPROVED, REJECTED
+  approvedById    String?
+  approvedBy      User?    @relation("ApprovedBy", fields: [approvedById], references: [id])
+  createdById     String?
+  createdBy       User?    @relation(fields: [createdById], references: [id])
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+}
+
+model RecurringExpense {
+  id              String   @id @default(uuid())
+  nama            String
+  categoryId      String
+  category        ExpenseCategory @relation(fields: [categoryId], references: [id])
+  nominal         Float
+  periodeAwal     DateTime
+  periodeAkhir    DateTime
+  alokasiHarian   Float    // nominal / jumlah hari
+  aktif           Boolean  @default(true)
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+}
+
+// ==================== EPIC 7: Tutup Hari & Laporan ====================
+
+model DailyClose {
+  id              String   @id @default(uuid())
+  tanggalBisnis   DateTime @unique
+  status          String   @default("OPEN") // OPEN, CLOSED
+  
+  // Snapshot ringkasan
+  kamarTersedia   Int      @default(0)
+  kamarTerjual    Int      @default(0)
+  okupansi        Float    @default(0)
+  adr             Float    @default(0)  // Average Daily Rate
+  revpar          Float    @default(0)
+  
+  pendapatanKamar     Float @default(0)
+  pendapatanLain      Float @default(0)
+  totalPajak          Float @default(0)
+  totalServiceCharge  Float @default(0)
+  
+  totalBiaya          Float @default(0)
+  biayaOperasional    Float @default(0)
+  biayaAlokasi        Float @default(0)
+  komisiOta           Float @default(0)
+  
+  labaOperasional     Float @default(0)
+  labaKas             Float @default(0)
+  
+  uangMasuk           Float @default(0)
+  uangKeluar          Float @default(0)
+  posisiKas           Float @default(0)
+  
+  closedById    String?
+  closedBy      User?    @relation(fields: [closedById], references: [id])
+  closedAt      DateTime?
+  reopenAlasan  String?
+  reopenAt      DateTime?
+  
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+}
+
+// ==================== Kas Kecil ====================
+
+model PettyCash {
+  id          String   @id @default(uuid())
+  tanggal     DateTime
+  jenis       String   // SALDO_AWAL, TOP_UP, PENGELUARAN, REKONSILIASI
+  nominal     Float
+  saldo       Float    // Running balance
+  keterangan  String?
+  createdAt   DateTime @default(now())
+}
