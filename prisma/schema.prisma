@@ -1,13 +1,14 @@
 // Prisma Schema — Sistem Manajemen Hotel (Fase 1)
-// Database: SQLite (mudah migrasi ke PostgreSQL)
+// Database: PostgreSQL (Supabase)
 
 generator client {
   provider = "prisma-client-js"
 }
 
 datasource db {
-  provider = "sqlite"
-  url      = env("DATABASE_URL")
+  provider  = "postgresql"
+  url       = env("DATABASE_URL")
+  directUrl = env("DIRECT_URL")
 }
 
 // ==================== EPIC 8: Auth & Security ====================
