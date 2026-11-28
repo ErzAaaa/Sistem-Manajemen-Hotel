@@ -1,8 +1,13 @@
 'use client'
 
 import { useEffect, useState } from 'react'
-import { Users, UserPlus, Download, Search, Star, Ban, History, X, AlertTriangle } from 'lucide-react'
+import { Users, UserPlus, Download, Search, Star, Ban, History, Edit3, X, AlertTriangle } from 'lucide-react'
 import { formatTanggalPendek, formatRupiah } from '@/lib/format'
+import {
+  MAX_GUEST_ADDRESS_LENGTH,
+  formatGuestAddress,
+  validateGuestAddress,
+} from '@/lib/guest-validation'
 
 interface GuestItem {
   id: string
@@ -40,6 +45,7 @@ export default function TamuPage() {
   const [q, setQ] = useState('')
   const [filterWna, setFilterWna] = useState('')
   const [showModal, setShowModal] = useState(false)
+  const [editingGuest, setEditingGuest] = useState<GuestItem | null>(null)
   const [duplicateWarn, setDuplicateWarn] = useState<GuestItem | null>(null)
   const [detailGuest, setDetailGuest] = useState<GuestDetail | null>(null)
   const [err, setErr] = useState('')
@@ -76,12 +82,81 @@ export default function TamuPage() {
     loadGuests()
   }, [filterWna])
 
+  function openAddModal() {
+    setEditingGuest(null)
+    setDuplicateWarn(null)
+    setErr('')
+    setForm({
+      nama: '',
+      telepon: '',
+      email: '',
+      jenisIdentitas: 'KTP',
+      nomorIdentitas: '',
+      kewarganegaraan: 'WNI',
+      kotaAsal: '',
+      alamat: '',
+      flagVip: false,
+      flagBlacklist: false,
+      catatan: '',
+      persetujuanPrivasi: true,
+    })
+    setShowModal(true)
+  }
+
+  function openEditModal(guest: GuestItem) {
+    setEditingGuest(guest)
+    setDuplicateWarn(null)
+    setErr('')
+    setForm({
+      nama: guest.nama,
+      telepon: guest.telepon || '',
+      email: guest.email || '',
+      jenisIdentitas: guest.jenisIdentitas || 'KTP',
+      nomorIdentitas: guest.nomorIdentitas || '',
+      kewarganegaraan: guest.kewarganegaraan || 'WNI',
+      kotaAsal: guest.kotaAsal || '',
+      alamat: guest.alamat || '',
+      flagVip: guest.flagVip,
+      flagBlacklist: guest.flagBlacklist,
+      catatan: guest.catatan || '',
+      persetujuanPrivasi: guest.persetujuanPrivasi,
+    })
+    setShowModal(true)
+  }
+
   async function submitGuest(forceCreate = false) {
     setErr('')
+    const addressCheck = validateGuestAddress(form.alamat, { required: false })
+    if (!addressCheck.valid) {
+      setErr(addressCheck.error)
+      return
+    }
+
+    if (editingGuest) {
+      const res = await fetch(`/api/tamu/${editingGuest.id}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ ...form, alamat: addressCheck.value }),
+      })
+      const data = await res.json()
+      if (!res.ok) {
+        setErr(data.error || 'Gagal memperbarui data tamu')
+        return
+      }
+      const updatedId = editingGuest.id
+      setEditingGuest(null)
+      setShowModal(false)
+      await loadGuests()
+      if (detailGuest?.id === updatedId) {
+        await openDetail(updatedId)
+      }
+      return
+    }
+
     const res = await fetch('/api/tamu', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ ...form, forceCreate }),
+      body: JSON.stringify({ ...form, alamat: addressCheck.value, forceCreate }),
     })
     const data = await res.json()
     if (res.status === 409 && data.duplicate) {
@@ -122,7 +197,7 @@ export default function TamuPage() {
   function exportApoaCsv() {
     const wna = guests.filter((g) => g.kewarganegaraan === 'WNA')
     const rows = [
-      ['Nama', 'Kewarganegaraan', 'Jenis Identitas', 'Nomor (Masked)', 'Telepon', 'Email', 'Kota/Negara Asal'],
+      ['Nama', 'Kewarganegaraan', 'Jenis Identitas', 'Nomor (Masked)', 'Telepon', 'Email', 'Kota/Negara Asal', 'Alamat'],
       ...wna.map((g) => [
         g.nama,
         g.kewarganegaraan,
@@ -131,6 +206,7 @@ export default function TamuPage() {
         g.telepon || '',
         g.email || '',
         g.kotaAsal || '',
+        formatGuestAddress(g.alamat),
       ]),
     ]
     const csv = rows.map((r) => r.map((c) => `"${String(c).replace(/"/g, '""')}"`).join(',')).join('\n')
@@ -163,7 +239,7 @@ export default function TamuPage() {
           </button>
           <button
             type="button"
-            onClick={() => { setShowModal(true); setDuplicateWarn(null); setErr('') }}
+            onClick={openAddModal}
             className="inline-flex items-center gap-1.5 px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg text-xs font-medium cursor-pointer"
           >
             <UserPlus className="w-4 h-4" /> Tambah Tamu
@@ -199,7 +275,7 @@ export default function TamuPage() {
               type="text"
               value={q}
               onChange={(e) => setQ(e.target.value)}
-              placeholder="Cari nama, telepon, email, atau kota asal..."
+              placeholder="Cari nama, telepon, email, kota asal, atau alamat..."
               className="w-full pl-9 pr-3 py-2 border border-slate-300 rounded-lg text-sm bg-white"
             />
           </div>
@@ -236,6 +312,7 @@ export default function TamuPage() {
                   <th className="py-3 px-4">Kontak</th>
                   <th className="py-3 px-4">Identitas (Masked)</th>
                   <th className="py-3 px-4">Asal</th>
+                  <th className="py-3 px-4">Alamat</th>
                   <th className="py-3 px-4">Menginap</th>
                   <th className="py-3 px-4">Aksi</th>
                 </tr>
@@ -259,15 +336,30 @@ export default function TamuPage() {
                       {g.jenisIdentitas ? `${g.jenisIdentitas}: ${g.nomorIdentitas || '-'}` : '-'}
                     </td>
                     <td className="py-3 px-4 text-xs text-slate-600">{g.kotaAsal || '-'}</td>
+                    <td
+                      className="py-3 px-4 text-xs text-slate-600 max-w-xs truncate"
+                      title={g.alamat || undefined}
+                    >
+                      {formatGuestAddress(g.alamat)}
+                    </td>
                     <td className="py-3 px-4 text-xs">{g._count?.reservations ?? 0} kali</td>
                     <td className="py-3 px-4">
-                      <button
-                        type="button"
-                        onClick={() => openDetail(g.id)}
-                        className="inline-flex items-center gap-1 text-xs text-indigo-600 hover:underline cursor-pointer"
-                      >
-                        <History className="w-3.5 h-3.5" /> Riwayat
-                      </button>
+                      <div className="flex items-center gap-3">
+                        <button
+                          type="button"
+                          onClick={() => openEditModal(g)}
+                          className="inline-flex items-center gap-1 text-xs text-slate-700 hover:text-indigo-600 hover:underline cursor-pointer"
+                        >
+                          <Edit3 className="w-3.5 h-3.5" /> Edit
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => openDetail(g.id)}
+                          className="inline-flex items-center gap-1 text-xs text-indigo-600 hover:underline cursor-pointer"
+                        >
+                          <History className="w-3.5 h-3.5" /> Riwayat
+                        </button>
+                      </div>
                     </td>
                   </tr>
                 ))}
@@ -277,13 +369,22 @@ export default function TamuPage() {
         )}
       </div>
 
-      {/* Modal Tambah Tamu */}
+      {/* Modal Tambah / Edit Tamu */}
       {showModal && (
         <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
           <div className="bg-white rounded-xl max-w-lg w-full p-6 space-y-4 max-h-[90vh] overflow-y-auto">
             <div className="flex justify-between items-center border-b pb-3">
-              <h2 className="font-bold text-slate-900">Registrasi Tamu Baru</h2>
-              <button type="button" onClick={() => setShowModal(false)} className="text-slate-400 hover:text-slate-600">
+              <h2 className="font-bold text-slate-900">
+                {editingGuest ? 'Edit Data Tamu' : 'Registrasi Tamu Baru'}
+              </h2>
+              <button
+                type="button"
+                onClick={() => {
+                  setShowModal(false)
+                  setEditingGuest(null)
+                }}
+                className="text-slate-400 hover:text-slate-600"
+              >
                 <X className="w-5 h-5" />
               </button>
             </div>
@@ -389,6 +490,30 @@ export default function TamuPage() {
                 </div>
               </div>
 
+              <div>
+                <div className="flex items-center justify-between mb-1">
+                  <label className="block text-xs font-medium text-slate-700">
+                    Alamat (Satu Baris, Maks. {MAX_GUEST_ADDRESS_LENGTH} Karakter)
+                  </label>
+                  <span className="text-[11px] text-slate-400">
+                    {form.alamat.length}/{MAX_GUEST_ADDRESS_LENGTH}
+                  </span>
+                </div>
+                <input
+                  type="text"
+                  maxLength={MAX_GUEST_ADDRESS_LENGTH}
+                  value={form.alamat}
+                  onChange={(e) =>
+                    setForm({ ...form, alamat: e.target.value.replace(/[\r\n]+/g, ' ') })
+                  }
+                  placeholder="Contoh: Jl. Pahlawan No. 10, Kec. Taman, Kota Madiun"
+                  className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm"
+                />
+                <p className="text-[11px] text-slate-500 mt-1">
+                  Wajib diisi saat tamu melakukan check-in.
+                </p>
+              </div>
+
               <div className="flex flex-wrap gap-4 pt-1 text-xs">
                 <label className="flex items-center gap-1.5">
                   <input type="checkbox" checked={form.flagVip} onChange={(e) => setForm({ ...form, flagVip: e.target.checked })} />
@@ -405,11 +530,18 @@ export default function TamuPage() {
               </div>
 
               <div className="flex justify-end gap-2 pt-3 border-t">
-                <button type="button" onClick={() => setShowModal(false)} className="px-4 py-2 text-xs text-slate-600 hover:bg-slate-100 rounded-lg">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setShowModal(false)
+                    setEditingGuest(null)
+                  }}
+                  className="px-4 py-2 text-xs text-slate-600 hover:bg-slate-100 rounded-lg"
+                >
                   Batal
                 </button>
                 <button type="submit" className="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg text-xs font-medium cursor-pointer">
-                  Simpan Tamu
+                  {editingGuest ? 'Simpan Perubahan' : 'Simpan Tamu'}
                 </button>
               </div>
             </form>
@@ -421,14 +553,27 @@ export default function TamuPage() {
       {detailGuest && (
         <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
           <div className="bg-white rounded-xl max-w-xl w-full p-6 space-y-4 max-h-[85vh] overflow-y-auto">
-            <div className="flex justify-between items-center border-b pb-3">
+            <div className="flex justify-between items-start border-b pb-3 gap-3">
               <div>
                 <h2 className="font-bold text-slate-900">{detailGuest.nama}</h2>
                 <p className="text-xs text-slate-500">{detailGuest.telepon || '-'} · {detailGuest.kotaAsal || '-'}</p>
+                <p className="text-xs text-slate-600 mt-1">
+                  <span className="font-medium text-slate-700">Alamat:</span>{' '}
+                  {formatGuestAddress(detailGuest.alamat)}
+                </p>
               </div>
-              <button type="button" onClick={() => setDetailGuest(null)} className="text-slate-400 hover:text-slate-600">
-                <X className="w-5 h-5" />
-              </button>
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => openEditModal(detailGuest)}
+                  className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg border border-slate-300 bg-white hover:bg-slate-50 text-xs font-medium text-slate-700 cursor-pointer"
+                >
+                  <Edit3 className="w-3.5 h-3.5" /> Edit
+                </button>
+                <button type="button" onClick={() => setDetailGuest(null)} className="text-slate-400 hover:text-slate-600">
+                  <X className="w-5 h-5" />
+                </button>
+              </div>
             </div>
 
             <h3 className="text-sm font-semibold text-slate-800">Riwayat Menginap</h3>

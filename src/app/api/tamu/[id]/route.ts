@@ -4,6 +4,7 @@ import { authorizeApi, handleApiError } from '@/lib/api-utils'
 import { createAuditLog } from '@/lib/audit'
 import { encryptText, decryptText } from '@/lib/crypto'
 import { maskIdentitas } from '@/lib/format'
+import { validateGuestAddress } from '@/lib/guest-validation'
 
 type RouteContext = { params: Promise<{ id: string }> }
 
@@ -142,7 +143,13 @@ export async function PUT(request: NextRequest, { params }: RouteContext) {
       updateData.kewarganegaraan = toOptionalTrimmedString(kewarganegaraan) ?? 'WNI'
     }
     if (kotaAsal !== undefined) updateData.kotaAsal = toOptionalTrimmedString(kotaAsal)
-    if (alamat !== undefined) updateData.alamat = toOptionalTrimmedString(alamat)
+    if (alamat !== undefined) {
+      const addressCheck = validateGuestAddress(alamat, { required: false })
+      if (!addressCheck.valid) {
+        return NextResponse.json({ error: addressCheck.error }, { status: 400 })
+      }
+      updateData.alamat = addressCheck.value
+    }
     if (flagVip !== undefined) updateData.flagVip = Boolean(flagVip)
     if (flagBlacklist !== undefined) updateData.flagBlacklist = Boolean(flagBlacklist)
     if (catatan !== undefined) updateData.catatan = toOptionalTrimmedString(catatan)

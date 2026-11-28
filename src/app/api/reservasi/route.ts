@@ -3,6 +3,7 @@ import { prisma } from '@/lib/prisma'
 import { authorizeApi, handleApiError } from '@/lib/api-utils'
 import { createAuditLog } from '@/lib/audit'
 import { hitungJumlahMalam } from '@/lib/format'
+import { validateGuestAddress } from '@/lib/guest-validation'
 import { calculateTaxAndService } from '@/lib/calculations'
 import {
   HttpError,
@@ -146,6 +147,7 @@ export async function POST(request: NextRequest) {
       biayaTambahan = 0,
       catatan,
       walkIn = false,
+      guestAlamat,
     } = body
 
     if (!guestId || !tanggalCheckIn || !tanggalCheckOut) {
@@ -175,6 +177,12 @@ export async function POST(request: NextRequest) {
     const guest = await prisma.guest.findUnique({ where: { id: guestId } })
     if (!guest) {
       return NextResponse.json({ error: 'Data tamu tidak ditemukan' }, { status: 404 })
+    }
+
+    const candidateAddress = guestAlamat !== undefined ? guestAlamat : guest.alamat
+    const addressCheck = validateGuestAddress(candidateAddress, { required: Boolean(walkIn) })
+    if (!addressCheck.valid) {
+      return NextResponse.json({ error: addressCheck.error }, { status: 400 })
     }
 
     if (walkIn && !roomId) {
@@ -235,6 +243,17 @@ export async function POST(request: NextRequest) {
         : 'CONFIRMED'
 
     const result = await prisma.$transaction(async (tx) => {
+      if (
+        guestAlamat !== undefined &&
+        addressCheck.value !== guest.alamat &&
+        (walkIn || addressCheck.value !== null)
+      ) {
+        await tx.guest.update({
+          where: { id: guestId },
+          data: { alamat: addressCheck.value },
+        })
+      }
+
       let assignedRoom = null
       if (roomId) {
         assignedRoom = await tx.room.findUnique({ where: { id: roomId } })

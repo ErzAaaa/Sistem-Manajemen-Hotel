@@ -3,6 +3,7 @@ import { prisma } from '@/lib/prisma'
 import { authorizeApi, handleApiError } from '@/lib/api-utils'
 import { createAuditLog } from '@/lib/audit'
 import { hitungJumlahMalam } from '@/lib/format'
+import { validateGuestAddress } from '@/lib/guest-validation'
 import {
   HttpError,
   computeReservationTotals,
@@ -70,6 +71,7 @@ export async function PUT(
     const existing = await prisma.reservation.findUnique({
       where: { id },
       include: {
+        guest: true,
         room: true,
         folio: true,
       },
@@ -97,6 +99,20 @@ export async function PUT(
               `Reservasi dengan status ${existing.status} tidak dapat check-in`,
               400
             )
+          }
+
+          const candidateAddress =
+            body.guestAlamat !== undefined ? body.guestAlamat : existing.guest?.alamat
+          const addressCheck = validateGuestAddress(candidateAddress, { required: true })
+          if (!addressCheck.valid) {
+            throw new HttpError(addressCheck.error, 400)
+          }
+
+          if (body.guestAlamat !== undefined && addressCheck.value !== existing.guest?.alamat) {
+            await tx.guest.update({
+              where: { id: existing.guestId },
+              data: { alamat: addressCheck.value },
+            })
           }
 
           const targetRoomId: string | undefined = body.roomId || existing.roomId || undefined
