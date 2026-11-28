@@ -5,6 +5,7 @@ import { authorizeApi, handleApiError } from '@/lib/api-utils'
 import { createAuditLog } from '@/lib/audit'
 import { encryptText, decryptText } from '@/lib/crypto'
 import { maskIdentitas } from '@/lib/format'
+import { validateGuestAddress } from '@/lib/guest-validation'
 
 function maskGuestIdentitas<T extends { nomorIdentitas: string | null }>(guest: T): T {
   return {
@@ -70,6 +71,7 @@ export async function GET(request: NextRequest) {
         { telepon: { contains: q } },
         { email: { contains: q } },
         { kotaAsal: { contains: q } },
+        { alamat: { contains: q } },
       ]
     }
 
@@ -148,6 +150,11 @@ export async function POST(request: NextRequest) {
       }
     }
 
+    const addressCheck = validateGuestAddress(alamat, { required: false })
+    if (!addressCheck.valid) {
+      return NextResponse.json({ error: addressCheck.error }, { status: 400 })
+    }
+
     const rawIdentitas = toOptionalTrimmedString(nomorIdentitas)
     const encryptedIdentitas = rawIdentitas ? encryptText(rawIdentitas) : null
 
@@ -160,7 +167,7 @@ export async function POST(request: NextRequest) {
         nomorIdentitas: encryptedIdentitas,
         kewarganegaraan: toOptionalTrimmedString(kewarganegaraan) ?? 'WNI',
         kotaAsal: toOptionalTrimmedString(kotaAsal),
-        alamat: toOptionalTrimmedString(alamat),
+        alamat: addressCheck.value,
         flagVip: Boolean(flagVip),
         flagBlacklist: Boolean(flagBlacklist),
         catatan: toOptionalTrimmedString(catatan),
