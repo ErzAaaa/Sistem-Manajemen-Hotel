@@ -46,11 +46,11 @@
   - `validateGuestAddress(raw: unknown, options?: { required?: boolean }): { valid: true; value: string | null } | { valid: false; error: string }`
   - `formatGuestAddress(alamat: string | null | undefined): string`
 
-- [ ] **Step 1: Write failing tests in `src/lib/__tests__/guest-validation.test.ts`** covering required empty/null rejection, optional empty -> `null`, trimming valid address up to 200 chars, rejecting 201 chars, rejecting `\n`/`\r` newlines, non-string rejection, and `formatGuestAddress` returning `"-"` for null/blank.
-- [ ] **Step 2: Run `pnpm run test` and verify RED** (`Cannot find module '../guest-validation'`).
-- [ ] **Step 3: Implement `src/lib/guest-validation.ts`** with Indonesian error messages.
-- [ ] **Step 4: Run `pnpm run test` and verify GREEN.**
-- [ ] **Step 5: Commit** `feat(tamu): add guest address validation and display formatter`.
+- [x] **Step 1: Write failing tests in `src/lib/__tests__/guest-validation.test.ts`** covering required empty/null rejection, optional empty -> `null`, trimming valid address up to 200 chars, rejecting 201 chars, rejecting `\n`/`\r` newlines, non-string rejection, and `formatGuestAddress` returning `"-"` for null/blank.
+- [x] **Step 2: Run `pnpm run test` and verify RED** (`Cannot find module '../guest-validation'`).
+- [x] **Step 3: Implement `src/lib/guest-validation.ts`** with Indonesian error messages.
+- [x] **Step 4: Run `pnpm run test` and verify GREEN.**
+- [x] **Step 5: Commit** `feat(tamu): add guest address validation and display formatter`.
 
 ### Task M1.2: Enforce Guest Address Validation in Guest & Check-In APIs
 
@@ -69,10 +69,10 @@
   - `PUT /api/reservasi/[id]` (when `action === 'CHECK_IN'`, requires valid `guestAlamat` or existing `guest.alamat`, updating `guest.alamat` in transaction if supplied)
   - Redacts guest PII from `AuditLog.keterangan` strings touched in these routes and ensures zero `console` PII logging.
 
-- [ ] **Step 1: Update `src/app/api/tamu/route.ts` and `src/app/api/tamu/[id]/route.ts`** to validate `alamat` via `validateGuestAddress` and include `alamat` in search filter.
-- [ ] **Step 2: Update `src/app/api/reservasi/route.ts` and `src/app/api/reservasi/[id]/route.ts`** to require a valid address on `walkIn` and `CHECK_IN` and persist inline `guestAlamat` updates.
-- [ ] **Step 3: Run `pnpm run test` to confirm no regressions.**
-- [ ] **Step 4: Commit** `feat(api): validate guest address and require it on check-in`.
+- [x] **Step 1: Update `src/app/api/tamu/route.ts` and `src/app/api/tamu/[id]/route.ts`** to validate `alamat` via `validateGuestAddress` and include `alamat` in search filter.
+- [x] **Step 2: Update `src/app/api/reservasi/route.ts` and `src/app/api/reservasi/[id]/route.ts`** to require a valid address on `walkIn` and `CHECK_IN` and persist inline `guestAlamat` updates.
+- [x] **Step 3: Run `pnpm run test` to confirm no regressions.**
+- [x] **Step 4: Commit** `feat(api): validate guest address and require it on check-in`.
 
 ### Task M1.3: Guest Register List/Add/Edit/Detail/Export & Check-In / Print UI
 
@@ -84,19 +84,19 @@
 **Interfaces:**
 - Consumes: `formatGuestAddress`, `validateGuestAddress`, `MAX_GUEST_ADDRESS_LENGTH` from `src/lib/guest-validation.ts`
 
-- [ ] **Step 1: Update `src/app/(dashboard)/tamu/page.tsx`** to add:
+- [x] **Step 1: Update `src/app/(dashboard)/tamu/page.tsx`** to add:
   - `"Alamat"` column in the guest table (`"-"` for null/empty).
   - Single-line `"Alamat"` field (`maxLength={200}`) in the Add Guest modal.
   - `"Edit"` button per guest row (and inside the Detail modal) opening the modal in edit mode (`PUT /api/tamu/[id]`).
   - `"Alamat"` display (`"-"` when null) in the Guest Detail/History modal.
   - `"Alamat"` column in `exportApoaCsv` (`"-"` when null).
-- [ ] **Step 2: Update `src/app/(dashboard)/reservasi/page.tsx`** to:
+- [x] **Step 2: Update `src/app/(dashboard)/reservasi/page.tsx`** to:
   - Include `alamat` on `Guest` interface and show `formatGuestAddress` in the reservation table & tape-chart detail modal.
   - Add inline single-line `"Alamat Tamu"` input (`maxLength={200}`, required when `isWalkIn`, pre-filled from `selectedGuest?.alamat`) in Create/Walk-In modal.
   - Add required `"Alamat Tamu *"` input (`maxLength={200}`, pre-filled from `checkInTarget.guest?.alamat`) in Check-In confirmation modal.
-- [ ] **Step 3: Update `src/app/(dashboard)/folio/page.tsx`** to show `"Alamat Tamu: ..."` (`"-"` when null) in the Folio header/print view.
-- [ ] **Step 4: Run `pnpm run lint`, `pnpm run test`, and `pnpm run build`.**
-- [ ] **Step 5: Commit** `feat(ui): add guest address across tamu register, exports, check-in, and folio print` and **STOP for partner review of M1 + M2 migration approval**.
+- [x] **Step 3: Update `src/app/(dashboard)/folio/page.tsx`** to show `"Alamat Tamu: ..."` (`"-"` when null) in the Folio header/print view.
+- [x] **Step 4: Run `pnpm run lint`, `pnpm run test`, and `pnpm run build`.**
+- [x] **Step 5: Commit** `feat(ui): add guest address across tamu register, exports, check-in, and folio print` and **STOP for partner review of M1 + M2 migration approval**.
 
 ---
 

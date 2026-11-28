@@ -30,6 +30,11 @@ import {
   formatTanggalPendek,
   hitungJumlahMalam,
 } from '@/lib/format'
+import {
+  MAX_GUEST_ADDRESS_LENGTH,
+  formatGuestAddress,
+  validateGuestAddress,
+} from '@/lib/guest-validation'
 
 interface RoomType {
   id: string
@@ -52,6 +57,7 @@ interface Guest {
   nama: string
   telepon: string | null
   email: string | null
+  alamat: string | null
   flagVip: boolean
   flagBlacklist: boolean
 }
@@ -220,6 +226,7 @@ export default function ReservasiPage() {
 
   const [guestId, setGuestId] = useState('')
   const [guestSearch, setGuestSearch] = useState('')
+  const [guestAlamat, setGuestAlamat] = useState('')
   const [tanggalCheckIn, setTanggalCheckIn] = useState(todayStr)
   const [tanggalCheckOut, setTanggalCheckOut] = useState(tomorrowStr)
   const [roomId, setRoomId] = useState('')
@@ -243,6 +250,8 @@ export default function ReservasiPage() {
   const [actionLoading, setActionLoading] = useState(false)
   const [checkInTarget, setCheckInTarget] = useState<Reservation | null>(null)
   const [checkInRoomId, setCheckInRoomId] = useState('')
+  const [checkInGuestAlamat, setCheckInGuestAlamat] = useState('')
+  const [checkInModalError, setCheckInModalError] = useState('')
   const [moveRoomTarget, setMoveRoomTarget] = useState<Reservation | null>(null)
   const [moveNewRoomId, setMoveNewRoomId] = useState('')
   const [extendTarget, setExtendTarget] = useState<Reservation | null>(null)
@@ -337,6 +346,7 @@ export default function ReservasiPage() {
     setFormError('')
     setGuestId('')
     setGuestSearch('')
+    setGuestAlamat('')
     setTanggalCheckIn(ci)
     setTanggalCheckOut(co)
     setRoomId(presetRoomId)
@@ -432,6 +442,11 @@ export default function ReservasiPage() {
       setFormError('Silakan pilih tamu terlebih dahulu.')
       return
     }
+    const addressCheck = validateGuestAddress(guestAlamat, { required: isWalkIn })
+    if (!addressCheck.valid) {
+      setFormError(addressCheck.error)
+      return
+    }
     if (jumlahMalamPreview <= 0) {
       setFormError('Tanggal check-out harus setelah tanggal check-in.')
       return
@@ -454,6 +469,7 @@ export default function ReservasiPage() {
       const payload = {
         walkIn: isWalkIn,
         guestId,
+        guestAlamat: addressCheck.value ?? undefined,
         roomId: roomId || undefined,
         ratePlanId: ratePlanId || undefined,
         tarifPerMalam: tarifOverride.trim() !== '' ? Number(tarifOverride) : undefined,
@@ -783,6 +799,12 @@ export default function ReservasiPage() {
                         {res.guest?.telepon && (
                           <div className="text-xs text-slate-500 mt-0.5">{res.guest.telepon}</div>
                         )}
+                        <div
+                          className="text-xs text-slate-500 mt-0.5 max-w-[220px] truncate"
+                          title={res.guest?.alamat || undefined}
+                        >
+                          Alamat: {formatGuestAddress(res.guest?.alamat)}
+                        </div>
                       </td>
                       <td className="px-4 py-3.5 align-top">
                         {res.room ? (
@@ -835,6 +857,8 @@ export default function ReservasiPage() {
                                 onClick={() => {
                                   setCheckInTarget(res)
                                   setCheckInRoomId(res.roomId || '')
+                                  setCheckInGuestAlamat(res.guest?.alamat ?? '')
+                                  setCheckInModalError('')
                                 }}
                                 className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-xs font-medium bg-emerald-600 hover:bg-emerald-700 text-white transition cursor-pointer"
                               >
@@ -1211,7 +1235,12 @@ export default function ReservasiPage() {
                   <select
                     required
                     value={guestId}
-                    onChange={(e) => setGuestId(e.target.value)}
+                    onChange={(e) => {
+                      const nextId = e.target.value
+                      setGuestId(nextId)
+                      const found = guests.find((g) => g.id === nextId)
+                      setGuestAlamat(found?.alamat ?? '')
+                    }}
                     className="px-3 py-2 text-sm border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500 bg-white"
                   >
                     <option value="">-- Pilih Tamu ({filteredGuests.length}) --</option>
@@ -1223,6 +1252,30 @@ export default function ReservasiPage() {
                     ))}
                   </select>
                 </div>
+
+                {guestId && (
+                  <div>
+                    <div className="flex items-center justify-between mb-1">
+                      <label className="block text-xs font-semibold text-slate-700">
+                        Alamat Tamu {isWalkIn && <span className="text-red-500">*</span>}
+                      </label>
+                      <span className="text-[11px] text-slate-400">
+                        {guestAlamat.length}/{MAX_GUEST_ADDRESS_LENGTH}
+                      </span>
+                    </div>
+                    <input
+                      type="text"
+                      required={isWalkIn}
+                      maxLength={MAX_GUEST_ADDRESS_LENGTH}
+                      value={guestAlamat}
+                      onChange={(e) =>
+                        setGuestAlamat(e.target.value.replace(/[\r\n]+/g, ' '))
+                      }
+                      placeholder="Alamat lengkap tamu (satu baris, maks. 200 karakter)"
+                      className="w-full px-3 py-2 text-sm border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                    />
+                  </div>
+                )}
 
                 {selectedGuest?.flagBlacklist && (
                   <div className="p-2.5 text-xs text-red-800 bg-red-50 border border-red-200 rounded-lg">
@@ -1531,6 +1584,34 @@ export default function ReservasiPage() {
             <p className="text-sm text-slate-600">
               Tamu: <strong>{checkInTarget.guest?.nama}</strong> ({checkInTarget.kodeBooking})
             </p>
+            {checkInModalError && (
+              <div className="flex items-center gap-2 p-3 text-xs text-red-700 bg-red-50 border border-red-200 rounded-lg">
+                <AlertCircle className="w-4 h-4 shrink-0" />
+                <span>{checkInModalError}</span>
+              </div>
+            )}
+            <div>
+              <div className="flex items-center justify-between mb-1">
+                <label className="block text-xs font-semibold text-slate-700">
+                  Alamat Tamu <span className="text-red-500">*</span>
+                </label>
+                <span className="text-[11px] text-slate-400">
+                  {checkInGuestAlamat.length}/{MAX_GUEST_ADDRESS_LENGTH}
+                </span>
+              </div>
+              <input
+                type="text"
+                required
+                maxLength={MAX_GUEST_ADDRESS_LENGTH}
+                value={checkInGuestAlamat}
+                onChange={(e) => {
+                  setCheckInGuestAlamat(e.target.value.replace(/[\r\n]+/g, ' '))
+                  if (checkInModalError) setCheckInModalError('')
+                }}
+                placeholder="Wajib diisi saat check-in (maks. 200 karakter)"
+                className="w-full px-3 py-2 text-sm border border-slate-300 rounded-lg"
+              />
+            </div>
             <div>
               <label className="block text-xs font-semibold text-slate-700 mb-1">
                 Pilih / Konfirmasi Kamar <span className="text-red-500">*</span>
@@ -1567,9 +1648,20 @@ export default function ReservasiPage() {
                 type="button"
                 disabled={!checkInRoomId || actionLoading}
                 onClick={async () => {
+                  const addressCheck = validateGuestAddress(checkInGuestAlamat, {
+                    required: true,
+                  })
+                  if (!addressCheck.valid) {
+                    setCheckInModalError(addressCheck.error)
+                    return
+                  }
                   const ok = await performReservationAction(
                     checkInTarget.id,
-                    { action: 'CHECK_IN', roomId: checkInRoomId },
+                    {
+                      action: 'CHECK_IN',
+                      roomId: checkInRoomId,
+                      guestAlamat: addressCheck.value,
+                    },
                     `Check-in berhasil untuk ${checkInTarget.kodeBooking}`
                   )
                   if (ok) setCheckInTarget(null)
@@ -1771,6 +1863,10 @@ export default function ReservasiPage() {
             </div>
 
             <div className="bg-slate-50 rounded-xl p-3.5 text-sm space-y-1.5">
+              <div className="flex justify-between gap-4">
+                <span className="text-slate-500 shrink-0">Alamat</span>
+                <span className="text-right">{formatGuestAddress(selectedBlock.guest?.alamat)}</span>
+              </div>
               <div className="flex justify-between">
                 <span className="text-slate-500">Kamar</span>
                 <span className="font-semibold">
@@ -1811,6 +1907,8 @@ export default function ReservasiPage() {
                     setSelectedBlock(null)
                     setCheckInTarget(target)
                     setCheckInRoomId(target.roomId || '')
+                    setCheckInGuestAlamat(target.guest?.alamat ?? '')
+                    setCheckInModalError('')
                   }}
                   className="inline-flex items-center gap-1.5 px-3 py-2 text-xs font-medium bg-emerald-600 text-white hover:bg-emerald-700 rounded-lg cursor-pointer"
                 >

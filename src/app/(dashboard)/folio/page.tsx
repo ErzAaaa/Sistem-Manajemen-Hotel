@@ -3,6 +3,7 @@
 import { useEffect, useState } from 'react'
 import { Receipt, Plus, Printer, CreditCard, Ban } from 'lucide-react'
 import { formatRupiah, formatTanggalPendek } from '@/lib/format'
+import { formatGuestAddress } from '@/lib/guest-validation'
 
 interface Charge {
   id: string
@@ -37,7 +38,7 @@ interface FolioItem {
   balance: number
   reservation: {
     kodeBooking: string
-    guest: { nama: string; telepon: string | null }
+    guest: { nama: string; telepon: string | null; alamat: string | null }
     room: { nomor: string; roomType: { nama: string } } | null
   } | null
   charges: Charge[]
@@ -247,6 +248,9 @@ export default function FolioPage() {
                     </h2>
                     <p className="text-xs text-slate-500">
                       Kode Booking: {selectedFolio.reservation?.kodeBooking} · Kamar {selectedFolio.reservation?.room?.nomor || '-'}
+                    </p>
+                    <p className="text-xs text-slate-600 mt-0.5">
+                      Alamat Tamu: {formatGuestAddress(selectedFolio.reservation?.guest?.alamat)}
                     </p>
                   </div>
                   <button
